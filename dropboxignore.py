@@ -36,16 +36,27 @@ class DropboxIgnoreEventHandler(FileSystemEventHandler):
         self.ignorefiles_by_dir = defaultdict(dict)
 
     def on_created(self, event):
+        logging.debug("Created %s: %s", 'directory' if event.is_directory else 'file', event.src_path)
+
+        fullpath = Path(event.src_path)
+        parent_dir = fullpath.parent
+
         if not event.is_directory and IGNORE_FILENAME_RE.match(event.src_path):
             logging.debug("Found new ignore file at %s", event.src_path);
-            fullpath = Path(event.src_path)
             matcher = parse_gitignore(event.src_path)
-            self.ignorefiles_by_dir[fullpath.parent][fullpath] = matcher
+            self.ignorefiles_by_dir[parent_dir][fullpath] = matcher
 
-        what = 'directory' if event.is_directory else 'file'
-        logging.debug("Created %s: %s", what, event.src_path)
+        else:
+            dir_matchers = self.ignorefiles_by_dir.get(parent_dir)
+            if len(dir_matchers) == 0:
+                return
+
+            matches_any = any(m(str(fullpath)) for m in dir_matchers.values())
+            logging.debug("New file matches ignore rule!");
 
     def on_deleted(self, event):
+        logging.debug("Deleted %s: %s", 'directory' if event.is_directory else 'file', event.src_path)
+
         if not event.is_directory and IGNORE_FILENAME_RE.match(event.src_path):
             logging.debug("Deleted ignore file at %s", event.src_path);
             fullpath = Path(event.src_path)
@@ -54,9 +65,6 @@ class DropboxIgnoreEventHandler(FileSystemEventHandler):
                 del dir_matchers[fullpath]
             if len(dir_matchers) == 0:
                 del self.ignorefiles_by_dir[fullpath.parent]
-
-        what = 'directory' if event.is_directory else 'file'
-        logging.debug("Deleted %s: %s", what, event.src_path)
 
 
 if __name__ == '__main__':
